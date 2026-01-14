@@ -1,16 +1,19 @@
 # Pinecone Vector Embedding Migration Tool
 
-This Python application migrates vector embeddings from an old Pinecone index (`gflops-serverless`) to a new index (`askdona`) using Gemini embeddings.
+A Python application with **Web GUI** for migrating vector embeddings from an old Pinecone index (`gflops-serverless`) to a new index (`askdona`) using Gemini embeddings.
 
 ## Features
 
+- **Web-Based GUI**: Beautiful browser interface powered by Streamlit
+- **Dashboard**: Overview of migration status and statistics
 - **Check Namespace Counts**: View embedding counts for any namespace
 - **Compare Indexes**: See the difference between source and target namespaces
-- **List Namespaces**: Browse all namespaces in an index
 - **Idempotent Migration**: Automatically skips already-migrated vectors
 - **Batch Processing**: Efficiently handles thousands of vectors
 - **Metadata Preservation**: Keeps all original metadata intact
 - **New Metadata Addition**: Adds `clearance_level: "1"` to all embeddings
+- **Progress Tracking**: Real-time progress bar during migration
+- **Dry Run Mode**: Preview migration without making changes
 
 ## Migration Details
 
@@ -66,48 +69,50 @@ This is added **in addition to** all existing metadata.
 
 ## Quick Start
 
+### Web GUI (Recommended)
+
+Launch the web interface:
+
+```bash
+source venv/bin/activate
+streamlit run app.py
+```
+
+Then open **http://localhost:8501** in your browser.
+
+### CLI Interface
+
+For command-line usage:
+
 ```bash
 source venv/bin/activate
 python3 main.py
 ```
 
-Then select option `7` for quick migration of the default namespace.
+## Web GUI Pages
 
-## Usage
+### 📊 Dashboard
+- Overview of source and target indexes
+- Migration progress visualization
+- Quick statistics
 
-### Start the Application
+### 🔍 Check Namespace
+- Enter any namespace ID
+- View vector counts in source, target, or both indexes
 
-```bash
-source venv/bin/activate
-python3 main.py
-```
+### ⚖️ Compare Indexes
+- Side-by-side comparison of source and target
+- Migration status summary
 
-### Menu Options
+### 🚀 Run Migration
+- Configure batch size
+- Enable/disable dry run mode
+- Real-time progress tracking
+- Detailed migration log
 
-The application provides an interactive menu:
-
-1. **Check namespace embedding count** - View vector counts for a specific namespace
-2. **Compare namespaces between indexes** - See source vs target comparison
-3. **List all namespaces in an index** - Browse available namespaces
-4. **Run migration for a namespace** - Execute the actual migration
-5. **Run migration (dry run)** - Preview what would be migrated without making changes
-6. **Show configuration** - Display current settings
-7. **Quick migrate default namespace** - One-click migration for the default namespace
-
-### Quick Migration
-
-For the namespace `51c04445-7c02-40a8-bb6b-fbaaa6b0000e`:
-
-1. Start the application: `python3 main.py`
-2. Press `7` for Quick Migrate
-3. Confirm the operation
-
-### Checking Namespace Counts
-
-1. Start the application: `python3 main.py`
-2. Press `1` for Check namespace embedding count
-3. Enter the namespace ID (or press Enter for default)
-4. Choose to check source, target, or both indexes
+### ⚙️ Configuration
+- View all current settings
+- Pinecone, Gemini, and migration configuration
 
 ## Safety Features
 
@@ -118,27 +123,25 @@ For the namespace `51c04445-7c02-40a8-bb6b-fbaaa6b0000e`:
 
 ## Configuration
 
-Configuration is stored in `config.py`. Key settings:
+Configuration is loaded from environment variables (`.env` file):
 
-```python
-# Pinecone Indexes
-OLD_INDEX = "gflops-serverless"  # Source (read-only)
-NEW_INDEX = "askdona"            # Target
+```bash
+# Pinecone
+PINECONE_API_KEY=your-api-key
+PINECONE_OLD_INDEX=gflops-serverless
+PINECONE_NEW_INDEX=askdona
 
-# Gemini Embedding
-MODEL = "gemini-embedding-001"   # Gemini embedding model
-DIMENSIONS = 3072                # Output dimensions
-TASK_TYPE = "RETRIEVAL_DOCUMENT"
+# Gemini
+GOOGLE_AI_API_KEY=your-api-key
+GEMINI_EMBEDDING_MODEL=gemini-embedding-001
+GEMINI_OUTPUT_DIMENSIONS=3072
 
-# Batch Processing
-QUERY_BATCH_SIZE = 100
-EMBEDDING_BATCH_SIZE = 100
-UPSERT_BATCH_SIZE = 100
-BATCH_DELAY = 0.5  # seconds
-
-# New Metadata
-NEW_METADATA_KEY = "clearance_level"
-NEW_METADATA_VALUE = "1"
+# Migration
+DEFAULT_NAMESPACE=your-namespace-uuid
+QUERY_BATCH_SIZE=100
+EMBEDDING_BATCH_SIZE=100
+UPSERT_BATCH_SIZE=100
+BATCH_DELAY=0.5
 ```
 
 ## Migration Workflow
@@ -167,22 +170,6 @@ NEW_METADATA_VALUE = "1"
    - Same namespace as source
 ```
 
-## Troubleshooting
-
-### Rate Limits
-
-If you encounter rate limit errors:
-- The application automatically retries with exponential backoff
-- You can increase `BATCH_DELAY` in `config.py`
-
-### Missing Text
-
-Vectors without `text` in metadata are skipped with a warning.
-
-### Connection Issues
-
-Ensure you have internet access and the API keys are valid.
-
 ## API Keys
 
 The application requires the following API keys (set in `.env` file):
@@ -192,18 +179,33 @@ The application requires the following API keys (set in `.env` file):
 | `PINECONE_API_KEY` | [Pinecone Console](https://app.pinecone.io/) |
 | `GOOGLE_AI_API_KEY` | [Google AI Studio](https://makersuite.google.com/app/apikey) |
 
-Copy `.env.example` to `.env` and fill in your API keys.
-
 ## Files
 
 | File | Purpose |
 |------|---------|
-| `main.py` | CLI application entry point |
+| `app.py` | Web GUI (Streamlit) |
+| `main.py` | CLI application |
 | `config.py` | Configuration settings |
 | `pinecone_client.py` | Pinecone API client |
 | `gemini_client.py` | Gemini embedding client |
 | `migration_service.py` | Core migration logic |
 | `requirements.txt` | Python dependencies |
+
+## Troubleshooting
+
+### Rate Limits
+
+If you encounter rate limit errors:
+- The application automatically retries with exponential backoff
+- You can increase `BATCH_DELAY` in your `.env` file
+
+### Missing Text
+
+Vectors without `text` in metadata are skipped with a warning.
+
+### Connection Issues
+
+Ensure you have internet access and the API keys are valid.
 
 ## License
 
