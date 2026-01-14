@@ -298,6 +298,140 @@ class PineconeClient:
             console.print(f"[red]Error checking vector:[/red] {e}")
             return False
 
+    def _update_single_vector(
+        self,
+        index,
+        vector_id: str,
+        metadata_updates: Dict[str, Any],
+        namespace: str
+    ) -> bool:
+        """Update metadata for a single vector (for concurrent execution)"""
+        try:
+            index.update(
+                id=vector_id,
+                set_metadata=metadata_updates,
+                namespace=namespace
+            )
+            return True
+        except Exception as e:
+            console.print(f"[red]Error updating vector {vector_id}:[/red] {e}")
+            return False
+
+    def update_vector_metadata(
+        self,
+        vector_ids: List[str],
+        metadata_updates: Dict[str, Any],
+        namespace: str,
+        source: bool = False,
+        max_workers: int = 10,
+        show_progress: bool = True
+    ) -> int:
+        """
+        Update metadata for vectors without re-embedding.
+        Uses Pinecone's update API which only modifies metadata.
+
+        Args:
+            vector_ids: List of vector IDs to update
+            metadata_updates: Dictionary of metadata fields to update
+            namespace: Namespace containing the vectors
+            source: If True, update source index; otherwise target index
+            max_workers: Number of concurrent update threads
+            show_progress: Whether to show progress
+
+        Returns:
+            Number of vectors successfully updated
+        """
+        index = self.source_index if source else self.target_index
+        index_name = config.pinecone.old_index_name if source else config.pinecone.new_index_name
+
+        if not vector_ids:
+            return 0
+
+        total = len(vector_ids)
+        if show_progress:
+            console.print(f"[cyan]Updating metadata for {total} vectors in {index_name}...[/cyan]")
+            console.print(f"[cyan]Metadata updates: {metadata_updates}[/cyan]")
+
+        successful_updates = 0
+
+        # Use concurrent updates for better performance
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all update tasks
+            future_to_id = {
+                executor.submit(
+                    self._update_single_vector,
+                    index,
+                    vec_id,
+                    metadata_updates,
+                    namespace
+                ): vec_id
+                for vec_id in vector_ids
+            }
+
+            # Collect results as they complete
+            completed = 0
+            for future in as_completed(future_to_id):
+                vec_id = future_to_id[future]
+                try:
+                    success = future.result()
+                    if success:
+                        successful_updates += 1
+                    completed += 1
+
+                    # Progress update every 100 vectors
+                    if show_progress and completed % 100 == 0:
+                        console.print(f"[dim]  Progress: {completed}/{total} ({successful_updates} successful)[/dim]")
+
+                except Exception as e:
+                    console.print(f"[red]Error in update for {vec_id}:[/red] {e}")
+                    completed += 1
+
+        if show_progress:
+            console.print(f"[green]Successfully updated {successful_updates}/{total} vectors[/green]")
+
+        return successful_updates
+
+    def get_vectors_with_string_clearance(
+        self,
+        namespace: str,
+        source: bool = False,
+        max_workers: int = 5
+    ) -> List[str]:
+        """
+        Get all vector IDs that have clearance_level as string "1".
+        Used to identify vectors needing metadata fix.
+
+        Args:
+            namespace: Namespace to check
+            source: If True, check source index; otherwise target index
+            max_workers: Number of concurrent fetch threads
+
+        Returns:
+            List of vector IDs with string clearance_level
+        """
+        console.print(f"[cyan]Scanning for vectors with string clearance_level...[/cyan]")
+
+        # Get all vector IDs
+        all_ids = self.get_all_vector_ids(namespace, source)
+        if not all_ids:
+            return []
+
+        ids_list = list(all_ids)
+
+        # Fetch vectors with metadata to check clearance_level type
+        vectors = self.fetch_vectors_by_ids(ids_list, namespace, source, max_workers)
+
+        # Filter for vectors with string clearance_level
+        vectors_to_fix = []
+        for vec in vectors:
+            clearance = vec.metadata.get("clearance_level")
+            # Check if it's a string (not int/None)
+            if isinstance(clearance, str):
+                vectors_to_fix.append(vec.id)
+
+        console.print(f"[yellow]Found {len(vectors_to_fix)} vectors with string clearance_level[/yellow]")
+        return vectors_to_fix
+
 
 # Global client instance
 pinecone_client = PineconeClient()

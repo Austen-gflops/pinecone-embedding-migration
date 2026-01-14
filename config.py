@@ -45,7 +45,7 @@ class MigrationConfig:
 
     # New metadata to add
     new_metadata_key: str = "clearance_level"
-    new_metadata_value: str = "1"
+    new_metadata_value: int = 1  # Must be integer, not string
 
     # Default namespace to migrate
     default_namespace: str = "51c04445-7c02-40a8-bb6b-fbaaa6b0000e"
@@ -83,7 +83,7 @@ class Config:
             upsert_batch_size=int(os.getenv("UPSERT_BATCH_SIZE", "100")),
             batch_delay=float(os.getenv("BATCH_DELAY", "0.5")),
             new_metadata_key=os.getenv("NEW_METADATA_KEY", "clearance_level"),
-            new_metadata_value=os.getenv("NEW_METADATA_VALUE", "1"),
+            new_metadata_value=int(os.getenv("NEW_METADATA_VALUE", "1")),  # Convert to int
             default_namespace=os.getenv("DEFAULT_NAMESPACE", "51c04445-7c02-40a8-bb6b-fbaaa6b0000e")
         )
 

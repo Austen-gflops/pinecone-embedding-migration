@@ -11,7 +11,8 @@ A Python application with **Web GUI** for migrating vector embeddings from an ol
 - **Idempotent Migration**: Automatically skips already-migrated vectors
 - **Batch Processing**: Efficiently handles thousands of vectors
 - **Metadata Preservation**: Keeps all original metadata intact
-- **New Metadata Addition**: Adds `clearance_level: "1"` to all embeddings
+- **New Metadata Addition**: Adds `clearance_level: 1` (integer) to all embeddings
+- **Fix Metadata Tool**: Update existing vectors from string to integer format
 - **Progress Tracking**: Real-time progress bar during migration
 - **Dry Run Mode**: Preview migration without making changes
 
@@ -29,9 +30,11 @@ Every migrated embedding will have a new metadata field:
 
 ```json
 {
-  "clearance_level": "1"
+  "clearance_level": 1
 }
 ```
+
+**Note:** The value is an integer (`1`), not a string (`"1"`).
 
 This is added **in addition to** all existing metadata.
 
@@ -110,6 +113,13 @@ python3 main.py
 - Real-time progress tracking
 - Detailed migration log
 
+### 🔧 Fix Metadata
+- **Purpose**: Update `clearance_level` from string `"1"` to integer `1`
+- Scan vectors with string format clearance_level
+- Update metadata without re-embedding
+- Concurrent processing for efficiency
+- Works on both source and target indexes
+
 ### ⚙️ Configuration
 - View all current settings
 - Pinecone, Gemini, and migration configuration
@@ -163,7 +173,7 @@ BATCH_DELAY=0.5
 4. PREPARE vectors
    - Keep original ID
    - Keep all original metadata
-   - Add clearance_level = "1"
+   - Add clearance_level = 1 (integer)
 
 5. UPSERT to target
    - Batch upsert to askdona

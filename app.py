@@ -48,7 +48,7 @@ def render_sidebar():
         # Navigation
         page = st.radio(
             "Navigation",
-            ["📊 Dashboard", "🔍 Check Namespace", "⚖️ Compare Indexes", "🚀 Run Migration", "⚙️ Configuration"],
+            ["📊 Dashboard", "🔍 Check Namespace", "⚖️ Compare Indexes", "🚀 Run Migration", "🔧 Fix Metadata", "⚙️ Configuration"],
             label_visibility="collapsed"
         )
 
@@ -65,7 +65,7 @@ def render_sidebar():
 
         # New metadata info
         st.subheader("New Metadata")
-        st.code(f'{config.migration.new_metadata_key}: "{config.migration.new_metadata_value}"')
+        st.code(f'{config.migration.new_metadata_key}: {config.migration.new_metadata_value}')  # Integer, no quotes
 
         return page
 
@@ -545,6 +545,190 @@ def render_configuration():
     st.code(config.migration.default_namespace)
 
 
+def render_fix_metadata():
+    """Render the Fix Metadata page for updating clearance_level from string to number"""
+    st.title("🔧 Fix Metadata")
+    st.markdown("""
+    **Purpose:** Update the `clearance_level` metadata field from string `"1"` to number `1`.
+
+    This operation:
+    - ✅ Only updates metadata (no re-embedding)
+    - ✅ Preserves all other metadata fields
+    - ✅ Uses Pinecone's update API for efficiency
+    - ✅ Processes vectors concurrently for speed
+    """)
+
+    st.markdown("---")
+
+    # Configuration
+    col1, col2 = st.columns(2)
+
+    with col1:
+        namespace = st.text_input(
+            "Namespace",
+            value=config.migration.default_namespace,
+            help="The namespace containing vectors to fix"
+        )
+
+        index_choice = st.radio(
+            "Index to Fix",
+            ["Target (askdona)", "Source (gflops-serverless)"],
+            help="Which index to update"
+        )
+
+    with col2:
+        max_workers = st.slider(
+            "Concurrent Workers",
+            min_value=1,
+            max_value=20,
+            value=10,
+            help="Number of concurrent update threads"
+        )
+
+        st.info("""
+        **What this does:**
+        1. Scans all vectors in the namespace
+        2. Finds vectors with `clearance_level: "1"` (string)
+        3. Updates them to `clearance_level: 1` (number)
+        """)
+
+    st.markdown("---")
+
+    # Action buttons
+    col_btn1, col_btn2 = st.columns(2)
+
+    with col_btn1:
+        scan_button = st.button("🔍 Scan for Vectors to Fix", type="secondary", use_container_width=True)
+
+    with col_btn2:
+        fix_button = st.button("🔧 Fix Metadata", type="primary", use_container_width=True)
+
+    # Scan operation
+    if scan_button:
+        if not namespace:
+            st.error("Please enter a namespace")
+            return
+
+        is_source = index_choice == "Source (gflops-serverless)"
+        index_name = config.pinecone.old_index_name if is_source else config.pinecone.new_index_name
+
+        with st.spinner(f"Scanning {index_name} namespace: {namespace}..."):
+            try:
+                # Get vectors with string clearance_level
+                vectors_to_fix = pinecone_client.get_vectors_with_string_clearance(
+                    namespace=namespace,
+                    source=is_source,
+                    max_workers=max_workers
+                )
+
+                st.session_state.vectors_to_fix = vectors_to_fix
+                st.session_state.fix_namespace = namespace
+                st.session_state.fix_source = is_source
+
+                if vectors_to_fix:
+                    st.success(f"Found **{len(vectors_to_fix)}** vectors with string clearance_level that need fixing.")
+
+                    # Show sample IDs
+                    with st.expander("Sample Vector IDs (first 10)"):
+                        for vec_id in vectors_to_fix[:10]:
+                            st.code(vec_id)
+                else:
+                    st.info("No vectors found with string clearance_level. All vectors are already using number format.")
+
+            except Exception as e:
+                st.error(f"Error scanning: {e}")
+
+    # Fix operation
+    if fix_button:
+        if not namespace:
+            st.error("Please enter a namespace")
+            return
+
+        # Check if we have scanned vectors
+        vectors_to_fix = st.session_state.get('vectors_to_fix', [])
+        fix_namespace = st.session_state.get('fix_namespace', '')
+        fix_source = st.session_state.get('fix_source', False)
+
+        # Verify namespace matches
+        is_source = index_choice == "Source (gflops-serverless)"
+        if fix_namespace != namespace or fix_source != is_source:
+            st.warning("Please scan for vectors first before fixing.")
+            return
+
+        if not vectors_to_fix:
+            st.info("No vectors to fix. Please scan first or all vectors are already fixed.")
+            return
+
+        index_name = config.pinecone.old_index_name if is_source else config.pinecone.new_index_name
+
+        st.markdown("---")
+        st.subheader("📊 Fix Progress")
+
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        log_container = st.container()
+
+        with log_container:
+            st.markdown("### Update Log")
+            log_expander = st.expander("Detailed Log", expanded=True)
+
+        try:
+            with log_expander:
+                st.write(f"Starting metadata fix for {len(vectors_to_fix)} vectors...")
+                st.write(f"Index: {index_name}")
+                st.write(f"Namespace: {namespace}")
+                st.write(f"Workers: {max_workers}")
+                st.write("---")
+
+            status_text.text(f"Updating {len(vectors_to_fix)} vectors...")
+
+            # Perform the update
+            updated_count = pinecone_client.update_vector_metadata(
+                vector_ids=vectors_to_fix,
+                metadata_updates={"clearance_level": 1},  # Number, not string!
+                namespace=namespace,
+                source=is_source,
+                max_workers=max_workers,
+                show_progress=True
+            )
+
+            progress_bar.progress(100)
+            status_text.text("Complete!")
+
+            with log_expander:
+                st.write("---")
+                st.write(f"✅ Successfully updated: {updated_count}/{len(vectors_to_fix)} vectors")
+
+            # Show results
+            st.markdown("---")
+            st.subheader("✅ Fix Complete")
+
+            col_res1, col_res2, col_res3 = st.columns(3)
+            with col_res1:
+                st.metric("Vectors Processed", len(vectors_to_fix))
+            with col_res2:
+                st.metric("Successfully Updated", updated_count)
+            with col_res3:
+                failed = len(vectors_to_fix) - updated_count
+                st.metric("Failed", failed, delta=f"-{failed}" if failed > 0 else None)
+
+            if updated_count == len(vectors_to_fix):
+                st.success("🎉 All vectors updated successfully!")
+                st.balloons()
+            elif updated_count > 0:
+                st.warning(f"⚠️ {len(vectors_to_fix) - updated_count} vectors failed to update.")
+            else:
+                st.error("❌ No vectors were updated. Check the logs for errors.")
+
+            # Clear session state
+            st.session_state.vectors_to_fix = []
+            st.session_state.fix_namespace = ''
+
+        except Exception as e:
+            st.error(f"Error during fix: {e}")
+            progress_bar.progress(0)
+
+
 def main():
     """Main application entry point"""
     init_session_state()
@@ -561,6 +745,8 @@ def main():
         render_compare_indexes()
     elif page == "🚀 Run Migration":
         render_migration()
+    elif page == "🔧 Fix Metadata":
+        render_fix_metadata()
     elif page == "⚙️ Configuration":
         render_configuration()
 
