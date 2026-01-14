@@ -482,9 +482,16 @@ def render_elasticsearch_update():
         return
 
     namespace_options = ["All Namespaces"] + namespaces
+
+    # Set default to config.migration.default_namespace if it exists in the list
+    default_index = 0  # "All Namespaces"
+    if config.migration.default_namespace in namespaces:
+        default_index = namespace_options.index(config.migration.default_namespace)
+
     selected_namespace = st.selectbox(
         "Select Namespace",
         namespace_options,
+        index=default_index,
         help="Select a namespace to update, or 'All Namespaces' to update everything"
     )
 

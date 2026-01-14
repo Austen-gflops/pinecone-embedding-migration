@@ -11,6 +11,7 @@ import time
 from elasticsearch import Elasticsearch
 from elasticsearch.helpers import streaming_bulk, scan
 from rich.console import Console
+from rich.markup import escape
 
 from config import config
 
@@ -60,21 +61,25 @@ class ElasticsearchClient:
             console.print(f"[green]Elasticsearch cluster:[/green] {info['cluster_name']}")
             return True
         except Exception as e:
-            console.print(f"[red]Connection failed:[/red] {e}")
+            console.print(f"[red]Connection failed:[/red] {escape(str(e))}")
             return False
 
     def get_index_stats(self) -> Dict[str, Any]:
         """Get statistics for the index"""
         try:
-            stats = self.client.indices.stats(index=self.index_name)
-            doc_count = stats['indices'][self.index_name]['primaries']['docs']['count']
+            # Use count API instead of indices.stats (not available in serverless)
+            response = self.client.count(
+                index=self.index_name,
+                body={"query": {"match_all": {}}}
+            )
+            doc_count = response['count']
             return {
                 "index": self.index_name,
                 "doc_count": doc_count,
                 "exists": True
             }
         except Exception as e:
-            console.print(f"[red]Error getting index stats:[/red] {e}")
+            console.print(f"[red]Error getting index stats:[/red] {escape(str(e))}")
             return {
                 "index": self.index_name,
                 "doc_count": 0,
@@ -108,7 +113,7 @@ class ElasticsearchClient:
             ]
             return namespaces
         except Exception as e:
-            console.print(f"[red]Error listing namespaces:[/red] {e}")
+            console.print(f"[red]Error listing namespaces:[/red] {escape(str(e))}")
             return []
 
     def get_namespace_stats(self, namespace: str) -> ESDocumentStats:
@@ -149,7 +154,7 @@ class ElasticsearchClient:
                 namespace=namespace
             )
         except Exception as e:
-            console.print(f"[red]Error getting namespace stats:[/red] {e}")
+            console.print(f"[red]Error getting namespace stats:[/red] {escape(str(e))}")
             return ESDocumentStats(
                 total_count=0,
                 with_clearance_level=0,
@@ -185,7 +190,7 @@ class ElasticsearchClient:
                 namespace=None
             )
         except Exception as e:
-            console.print(f"[red]Error getting all stats:[/red] {e}")
+            console.print(f"[red]Error getting all stats:[/red] {escape(str(e))}")
             return ESDocumentStats(
                 total_count=0,
                 with_clearance_level=0,
@@ -291,7 +296,7 @@ class ElasticsearchClient:
                     success_count += 1
                 else:
                     failed_count += 1
-                    console.print(f"[red]Failed:[/red] {result}")
+                    console.print(f"[red]Failed:[/red] {escape(str(result))}")
 
                 # Progress callback every 100 docs
                 if progress_callback and total_processed % 100 == 0:
@@ -307,7 +312,7 @@ class ElasticsearchClient:
             }
 
         except Exception as e:
-            console.print(f"[red]Bulk update error:[/red] {e}")
+            console.print(f"[red]Bulk update error:[/red] {escape(str(e))}")
             return {
                 "success": success_count,
                 "failed": failed_count,
@@ -363,7 +368,7 @@ class ElasticsearchClient:
             return response['count']
 
         except Exception as e:
-            console.print(f"[red]Error previewing update:[/red] {e}")
+            console.print(f"[red]Error previewing update:[/red] {escape(str(e))}")
             return 0
 
     def sample_documents(
@@ -400,7 +405,7 @@ class ElasticsearchClient:
             return [hit["_source"] for hit in response["hits"]["hits"]]
 
         except Exception as e:
-            console.print(f"[red]Error getting sample documents:[/red] {e}")
+            console.print(f"[red]Error getting sample documents:[/red] {escape(str(e))}")
             return []
 
 
