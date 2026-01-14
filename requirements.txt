@@ -1,0 +1,20 @@
+# Pinecone Migration App Dependencies
+# Install with: pip3 install -r requirements.txt
+
+# Pinecone SDK for vector database operations
+pinecone>=5.0.0
+
+# Google GenAI SDK for Gemini embeddings (new package)
+google-genai>=1.0.0
+
+# Rich for beautiful CLI output
+rich>=13.0.0
+
+# Python-dotenv for environment variable management
+python-dotenv>=1.0.0
+
+# Requests for HTTP operations (if needed)
+requests>=2.31.0
+
+# Tenacity for retry logic
+tenacity>=8.2.0
