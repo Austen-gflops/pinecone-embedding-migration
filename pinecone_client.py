@@ -1,11 +1,12 @@
 """
 Pinecone Client for both source and target indexes
-Optimized for efficient batch fetching
+Optimized for efficient batch fetching and bulk metadata updates
 """
 from typing import Dict, List, Optional, Any, Set, Iterator
 from dataclasses import dataclass
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
+import requests
 
 from pinecone import Pinecone
 from rich.console import Console
@@ -54,6 +55,105 @@ class PineconeClient:
             self._target_index = self.pc.Index(config.pinecone.new_index_name)
             console.print(f"[green]Connected to target index:[/green] {config.pinecone.new_index_name}")
         return self._target_index
+
+    def _get_index_host(self, index_name: str) -> str:
+        """Get the host URL for an index"""
+        try:
+            index_info = self.pc.describe_index(index_name)
+            return index_info.host
+        except Exception as e:
+            console.print(f"[red]Error getting index host:[/red] {e}")
+            raise
+
+    def bulk_update_metadata_by_filter(
+        self,
+        namespace: str,
+        metadata_filter: Dict[str, Any],
+        metadata_updates: Dict[str, Any],
+        source: bool = False,
+        dry_run: bool = False
+    ) -> Dict[str, Any]:
+        """
+        Bulk update metadata for vectors matching a filter.
+        Uses Pinecone's bulk update API (preview feature).
+
+        This is much more efficient than updating vectors one at a time
+        as it updates all matching vectors in a single API call.
+
+        Args:
+            namespace: Namespace containing the vectors
+            metadata_filter: Filter to match vectors (same syntax as query filters)
+                            e.g., {"clearance_level": {"$eq": "1"}}
+            metadata_updates: Metadata key-value pairs to set
+                            e.g., {"clearance_level": 1}
+            source: If True, update source index; otherwise target index
+            dry_run: If True, only simulate the update without making changes
+
+        Returns:
+            Dict with 'updated_count' and other response details
+        """
+        index_name = config.pinecone.old_index_name if source else config.pinecone.new_index_name
+        index_host = self._get_index_host(index_name)
+
+        console.print(f"[cyan]Bulk updating metadata in {index_name}...[/cyan]")
+        console.print(f"[cyan]Filter: {metadata_filter}[/cyan]")
+        console.print(f"[cyan]Updates: {metadata_updates}[/cyan]")
+        if dry_run:
+            console.print(f"[yellow]DRY RUN MODE - No changes will be made[/yellow]")
+
+        # Build the request
+        url = f"https://{index_host}/vectors/update"
+        headers = {
+            "Api-Key": config.pinecone.api_key,
+            "Content-Type": "application/json",
+            "X-Pinecone-API-Version": "2025-01"  # Use latest stable version with bulk update
+        }
+
+        payload = {
+            "namespace": namespace,
+            "filter": metadata_filter,
+            "setMetadata": metadata_updates
+        }
+
+        if dry_run:
+            payload["dry_run"] = True
+
+        try:
+            response = requests.post(url, headers=headers, json=payload, timeout=300)
+
+            if response.status_code == 200:
+                result = response.json()
+                updated_count = result.get("updatedCount", 0)
+                console.print(f"[green]Successfully updated {updated_count} vectors[/green]")
+                return {
+                    "success": True,
+                    "updated_count": updated_count,
+                    "response": result
+                }
+            else:
+                error_msg = response.text
+                console.print(f"[red]Bulk update failed (HTTP {response.status_code}):[/red] {error_msg}")
+                return {
+                    "success": False,
+                    "updated_count": 0,
+                    "error": error_msg,
+                    "status_code": response.status_code
+                }
+
+        except requests.exceptions.Timeout:
+            console.print("[red]Bulk update request timed out[/red]")
+            return {
+                "success": False,
+                "updated_count": 0,
+                "error": "Request timed out"
+            }
+        except Exception as e:
+            console.print(f"[red]Error in bulk update:[/red] {e}")
+            return {
+                "success": False,
+                "updated_count": 0,
+                "error": str(e)
+            }
 
     def get_namespace_stats(self, index_name: str, namespace: str) -> Dict[str, Any]:
         """Get statistics for a specific namespace in an index"""

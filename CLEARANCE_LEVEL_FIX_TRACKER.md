@@ -68,16 +68,27 @@ Features:
 
 ## Technical Details
 
-### Pinecone Update API
-- Uses `index.update(id, set_metadata={...}, namespace=...)`
-- Does NOT require vector values (no re-embedding)
-- Only modifies specified metadata fields
-- Other metadata fields remain unchanged
+### Pinecone Bulk Update API (Optimized)
+- Uses Pinecone's bulk update REST API with filter-based matching
+- Single API call updates ALL matching vectors
+- Endpoint: `POST https://{INDEX_HOST}/vectors/update`
+- Header: `X-Pinecone-API-Version: 2025-01`
+- Filter: `{"clearance_level": {"$eq": "1"}}`
+- Update: `{"clearance_level": 1}`
 
-### Concurrent Processing
-- Default: 10 concurrent workers
-- Can be adjusted via slider (1-20)
-- Progress updates every 100 vectors
+### API Request Format
+```json
+{
+  "namespace": "your-namespace",
+  "filter": {"clearance_level": {"$eq": "1"}},
+  "setMetadata": {"clearance_level": 1}
+}
+```
+
+### Features
+- **Scan (Preview)**: Counts vectors needing update
+- **Dry Run**: Tests the bulk update without making changes
+- **Bulk Fix**: Executes the update in a single API call
 
 ---
 
@@ -98,4 +109,5 @@ All tasks have been completed:
 ---
 
 ## Changes Pushed to GitHub
-- Commit pending...
+- Commit: `81ad73c` - Add Fix Metadata feature and change clearance_level to integer
+- Repository: https://github.com/Austen-gflops/pinecone-embedding-migration

@@ -554,8 +554,8 @@ def render_fix_metadata():
     This operation:
     - ✅ Only updates metadata (no re-embedding)
     - ✅ Preserves all other metadata fields
-    - ✅ Uses Pinecone's update API for efficiency
-    - ✅ Processes vectors concurrently for speed
+    - ✅ Uses Pinecone's bulk update API for maximum efficiency
+    - ✅ Single API call updates all matching vectors
     """)
 
     st.markdown("---")
@@ -577,40 +577,36 @@ def render_fix_metadata():
         )
 
     with col2:
-        max_workers = st.slider(
-            "Concurrent Workers",
-            min_value=1,
-            max_value=20,
-            value=10,
-            help="Number of concurrent update threads"
-        )
-
         st.info("""
-        **What this does:**
-        1. Scans all vectors in the namespace
-        2. Finds vectors with `clearance_level: "1"` (string)
-        3. Updates them to `clearance_level: 1` (number)
+        **Bulk Update API:**
+        Uses Pinecone's optimized bulk update API that:
+        - Filters vectors by metadata
+        - Updates all matching vectors in a single API call
+        - Much faster than per-vector updates
         """)
 
     st.markdown("---")
 
     # Action buttons
-    col_btn1, col_btn2 = st.columns(2)
+    col_btn1, col_btn2, col_btn3 = st.columns(3)
 
     with col_btn1:
-        scan_button = st.button("🔍 Scan for Vectors to Fix", type="secondary", use_container_width=True)
+        scan_button = st.button("🔍 Scan (Preview)", type="secondary", use_container_width=True)
 
     with col_btn2:
-        fix_button = st.button("🔧 Fix Metadata", type="primary", use_container_width=True)
+        dry_run_button = st.button("🧪 Dry Run", type="secondary", use_container_width=True)
 
-    # Scan operation
+    with col_btn3:
+        bulk_fix_button = st.button("🚀 Bulk Fix (Optimized)", type="primary", use_container_width=True)
+
+    is_source = index_choice == "Source (gflops-serverless)"
+    index_name = config.pinecone.old_index_name if is_source else config.pinecone.new_index_name
+
+    # Scan operation (preview only)
     if scan_button:
         if not namespace:
             st.error("Please enter a namespace")
             return
-
-        is_source = index_choice == "Source (gflops-serverless)"
-        index_name = config.pinecone.old_index_name if is_source else config.pinecone.new_index_name
 
         with st.spinner(f"Scanning {index_name} namespace: {namespace}..."):
             try:
@@ -618,12 +614,8 @@ def render_fix_metadata():
                 vectors_to_fix = pinecone_client.get_vectors_with_string_clearance(
                     namespace=namespace,
                     source=is_source,
-                    max_workers=max_workers
+                    max_workers=5
                 )
-
-                st.session_state.vectors_to_fix = vectors_to_fix
-                st.session_state.fix_namespace = namespace
-                st.session_state.fix_source = is_source
 
                 if vectors_to_fix:
                     st.success(f"Found **{len(vectors_to_fix)}** vectors with string clearance_level that need fixing.")
@@ -638,33 +630,44 @@ def render_fix_metadata():
             except Exception as e:
                 st.error(f"Error scanning: {e}")
 
-    # Fix operation
-    if fix_button:
+    # Dry run operation
+    if dry_run_button:
         if not namespace:
             st.error("Please enter a namespace")
             return
 
-        # Check if we have scanned vectors
-        vectors_to_fix = st.session_state.get('vectors_to_fix', [])
-        fix_namespace = st.session_state.get('fix_namespace', '')
-        fix_source = st.session_state.get('fix_source', False)
+        st.markdown("---")
+        st.subheader("🧪 Dry Run Results")
 
-        # Verify namespace matches
-        is_source = index_choice == "Source (gflops-serverless)"
-        if fix_namespace != namespace or fix_source != is_source:
-            st.warning("Please scan for vectors first before fixing.")
+        with st.spinner(f"Running dry run on {index_name}..."):
+            try:
+                result = pinecone_client.bulk_update_metadata_by_filter(
+                    namespace=namespace,
+                    metadata_filter={"clearance_level": {"$eq": "1"}},
+                    metadata_updates={"clearance_level": 1},
+                    source=is_source,
+                    dry_run=True
+                )
+
+                if result["success"]:
+                    st.success(f"Dry run complete! **{result['updated_count']}** vectors would be updated.")
+                    with st.expander("API Response"):
+                        st.json(result["response"])
+                else:
+                    st.error(f"Dry run failed: {result.get('error', 'Unknown error')}")
+
+            except Exception as e:
+                st.error(f"Error in dry run: {e}")
+
+    # Bulk fix operation (optimized)
+    if bulk_fix_button:
+        if not namespace:
+            st.error("Please enter a namespace")
             return
-
-        if not vectors_to_fix:
-            st.info("No vectors to fix. Please scan first or all vectors are already fixed.")
-            return
-
-        index_name = config.pinecone.old_index_name if is_source else config.pinecone.new_index_name
 
         st.markdown("---")
-        st.subheader("📊 Fix Progress")
+        st.subheader("🚀 Bulk Update Progress")
 
-        progress_bar = st.progress(0)
         status_text = st.empty()
         log_container = st.container()
 
@@ -674,59 +677,60 @@ def render_fix_metadata():
 
         try:
             with log_expander:
-                st.write(f"Starting metadata fix for {len(vectors_to_fix)} vectors...")
+                st.write(f"Starting bulk metadata update...")
                 st.write(f"Index: {index_name}")
                 st.write(f"Namespace: {namespace}")
-                st.write(f"Workers: {max_workers}")
+                st.write(f"Filter: clearance_level == \"1\" (string)")
+                st.write(f"Update: clearance_level = 1 (integer)")
                 st.write("---")
+                st.write("Using Pinecone Bulk Update API (single API call)...")
 
-            status_text.text(f"Updating {len(vectors_to_fix)} vectors...")
+            status_text.text("Executing bulk update...")
 
-            # Perform the update
-            updated_count = pinecone_client.update_vector_metadata(
-                vector_ids=vectors_to_fix,
-                metadata_updates={"clearance_level": 1},  # Number, not string!
+            # Perform the bulk update using filter
+            result = pinecone_client.bulk_update_metadata_by_filter(
                 namespace=namespace,
+                metadata_filter={"clearance_level": {"$eq": "1"}},
+                metadata_updates={"clearance_level": 1},
                 source=is_source,
-                max_workers=max_workers,
-                show_progress=True
+                dry_run=False
             )
 
-            progress_bar.progress(100)
             status_text.text("Complete!")
 
             with log_expander:
                 st.write("---")
-                st.write(f"✅ Successfully updated: {updated_count}/{len(vectors_to_fix)} vectors")
+                if result["success"]:
+                    st.write(f"✅ Successfully updated: {result['updated_count']} vectors")
+                else:
+                    st.write(f"❌ Update failed: {result.get('error', 'Unknown error')}")
 
             # Show results
             st.markdown("---")
-            st.subheader("✅ Fix Complete")
+            st.subheader("✅ Bulk Fix Complete" if result["success"] else "❌ Bulk Fix Failed")
 
-            col_res1, col_res2, col_res3 = st.columns(3)
-            with col_res1:
-                st.metric("Vectors Processed", len(vectors_to_fix))
-            with col_res2:
-                st.metric("Successfully Updated", updated_count)
-            with col_res3:
-                failed = len(vectors_to_fix) - updated_count
-                st.metric("Failed", failed, delta=f"-{failed}" if failed > 0 else None)
+            if result["success"]:
+                col_res1, col_res2 = st.columns(2)
+                with col_res1:
+                    st.metric("Vectors Updated", result["updated_count"])
+                with col_res2:
+                    st.metric("API Calls", "1 (bulk)")
 
-            if updated_count == len(vectors_to_fix):
-                st.success("🎉 All vectors updated successfully!")
-                st.balloons()
-            elif updated_count > 0:
-                st.warning(f"⚠️ {len(vectors_to_fix) - updated_count} vectors failed to update.")
+                if result["updated_count"] > 0:
+                    st.success(f"🎉 Successfully updated {result['updated_count']} vectors in a single API call!")
+                    st.balloons()
+                else:
+                    st.info("No vectors matched the filter. All vectors may already have integer clearance_level.")
+
+                with st.expander("API Response Details"):
+                    st.json(result.get("response", {}))
             else:
-                st.error("❌ No vectors were updated. Check the logs for errors.")
-
-            # Clear session state
-            st.session_state.vectors_to_fix = []
-            st.session_state.fix_namespace = ''
+                st.error(f"Update failed: {result.get('error', 'Unknown error')}")
+                if result.get("status_code"):
+                    st.write(f"HTTP Status Code: {result['status_code']}")
 
         except Exception as e:
-            st.error(f"Error during fix: {e}")
-            progress_bar.progress(0)
+            st.error(f"Error during bulk fix: {e}")
 
 
 def main():
