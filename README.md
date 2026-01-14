@@ -17,7 +17,7 @@ This Python application migrates vector embeddings from an old Pinecone index (`
 | Property | Source (Old) | Target (New) |
 |----------|--------------|--------------|
 | Index Name | `gflops-serverless` | `askdona` |
-| Embedding Model | OpenAI | Gemini (text-embedding-004) |
+| Embedding Model | OpenAI | Gemini (`gemini-embedding-001`) |
 | Dimensions | Variable | 3072 |
 
 ### New Metadata Added
@@ -41,14 +41,15 @@ This is added **in addition to** all existing metadata.
 
 ### Setup
 
-1. Navigate to the application directory:
+1. Clone the repository:
    ```bash
-   cd /Users/productivity/Desktop/pinecone-migration-app
+   git clone https://github.com/Austen-gflops/pinecone-embedding-migration.git
+   cd pinecone-embedding-migration
    ```
 
-2. Create a virtual environment using Python 3.11 (required on macOS):
+2. Create a virtual environment:
    ```bash
-   /opt/homebrew/opt/python@3.11/bin/python3.11 -m venv venv
+   python3 -m venv venv
    source venv/bin/activate
    ```
 
@@ -57,14 +58,15 @@ This is added **in addition to** all existing metadata.
    pip3 install -r requirements.txt
    ```
 
-**Note:** The virtual environment is already set up. If you need to reinstall, delete the `venv` folder first.
+4. Configure environment variables:
+   ```bash
+   cp .env.example .env
+   # Edit .env with your API keys
+   ```
 
 ## Quick Start
 
-The application is pre-configured and ready to use. Just run:
-
 ```bash
-cd /Users/productivity/Desktop/pinecone-migration-app
 source venv/bin/activate
 python3 main.py
 ```
@@ -76,7 +78,6 @@ Then select option `7` for quick migration of the default namespace.
 ### Start the Application
 
 ```bash
-cd /Users/productivity/Desktop/pinecone-migration-app
 source venv/bin/activate
 python3 main.py
 ```
@@ -125,8 +126,8 @@ OLD_INDEX = "gflops-serverless"  # Source (read-only)
 NEW_INDEX = "askdona"            # Target
 
 # Gemini Embedding
-MODEL = "models/text-embedding-004"
-DIMENSIONS = 3072
+MODEL = "gemini-embedding-001"   # Gemini embedding model
+DIMENSIONS = 3072                # Output dimensions
 TASK_TYPE = "RETRIEVAL_DOCUMENT"
 
 # Batch Processing
@@ -184,11 +185,14 @@ Ensure you have internet access and the API keys are valid.
 
 ## API Keys
 
-The application uses API keys from the AskDona project:
-- **Pinecone**: `PINECONE_API_KEY`
-- **Google AI (Gemini)**: `GOOGLE_AI_API_KEY`
+The application requires the following API keys (set in `.env` file):
 
-These are pre-configured in `config.py`.
+| Variable | Source |
+|----------|--------|
+| `PINECONE_API_KEY` | [Pinecone Console](https://app.pinecone.io/) |
+| `GOOGLE_AI_API_KEY` | [Google AI Studio](https://makersuite.google.com/app/apikey) |
+
+Copy `.env.example` to `.env` and fill in your API keys.
 
 ## Files
 
@@ -201,7 +205,6 @@ These are pre-configured in `config.py`.
 | `migration_service.py` | Core migration logic |
 | `requirements.txt` | Python dependencies |
 
-## Related Documentation
+## License
 
-- Migration Tracker: `/Users/productivity/Desktop/PINECONE_MIGRATION_TRACKER.md`
-- AskDona Backend: `/Users/productivity/Desktop/Refactored AskDona/askdona-backend/`
+MIT License
