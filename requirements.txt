@@ -21,3 +21,6 @@ tenacity>=8.2.0
 
 # Streamlit for web GUI
 streamlit>=1.30.0
+
+# Elasticsearch client for keyword search database
+elasticsearch>=8.0.0

@@ -33,6 +33,14 @@ class GeminiConfig:
 
 
 @dataclass
+class ElasticsearchConfig:
+    """Elasticsearch configuration"""
+    endpoint: str
+    api_key: str
+    index_name: str = "text-search-v0"
+
+
+@dataclass
 class MigrationConfig:
     """Migration configuration"""
     # Batch sizes
@@ -58,11 +66,17 @@ class Config:
         # Load from environment variables (required)
         pinecone_api_key = os.getenv("PINECONE_API_KEY")
         google_api_key = os.getenv("GOOGLE_AI_API_KEY")
+        elasticsearch_endpoint = os.getenv("ELASTICSEARCH_ENDPOINT")
+        elasticsearch_api_key = os.getenv("ELASTICSEARCH_API_KEY")
 
         if not pinecone_api_key:
             raise ValueError("PINECONE_API_KEY environment variable is required. Copy .env.example to .env and fill in your API key.")
         if not google_api_key:
             raise ValueError("GOOGLE_AI_API_KEY environment variable is required. Copy .env.example to .env and fill in your API key.")
+        if not elasticsearch_endpoint:
+            raise ValueError("ELASTICSEARCH_ENDPOINT environment variable is required. Copy .env.example to .env and fill in your endpoint.")
+        if not elasticsearch_api_key:
+            raise ValueError("ELASTICSEARCH_API_KEY environment variable is required. Copy .env.example to .env and fill in your API key.")
 
         self.pinecone = PineconeConfig(
             api_key=pinecone_api_key,
@@ -85,6 +99,12 @@ class Config:
             new_metadata_key=os.getenv("NEW_METADATA_KEY", "clearance_level"),
             new_metadata_value=int(os.getenv("NEW_METADATA_VALUE", "1")),  # Convert to int
             default_namespace=os.getenv("DEFAULT_NAMESPACE", "51c04445-7c02-40a8-bb6b-fbaaa6b0000e")
+        )
+
+        self.elasticsearch = ElasticsearchConfig(
+            endpoint=elasticsearch_endpoint,
+            api_key=elasticsearch_api_key,
+            index_name=os.getenv("ELASTICSEARCH_INDEX", "text-search-v0")
         )
 
     def display_info(self) -> str:

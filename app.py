@@ -20,6 +20,7 @@ st.set_page_config(
 from config import config
 from pinecone_client import pinecone_client, VectorRecord
 from gemini_client import GeminiEmbeddingClient
+from elasticsearch_client import elasticsearch_client
 
 
 def init_session_state():
@@ -48,7 +49,7 @@ def render_sidebar():
         # Navigation
         page = st.radio(
             "Navigation",
-            ["📊 Dashboard", "🔍 Check Namespace", "🚀 Run Migration", "⚙️ Configuration"],
+            ["📊 Dashboard", "🔍 Check Namespace", "🚀 Run Migration", "🔎 Elasticsearch Update", "⚙️ Configuration"],
             label_visibility="collapsed"
         )
 
@@ -420,6 +421,207 @@ def run_migration(namespace: str, batch_size: int, dry_run: bool):
         st.exception(e)
 
 
+def render_elasticsearch_update():
+    """Render the Elasticsearch metadata update page"""
+    st.title("🔎 Elasticsearch Update")
+    st.markdown("Add `clearance_level: 1` (integer) to Elasticsearch documents.")
+
+    # Warning
+    st.warning("""
+    **Important Notes:**
+    - **NO DELETIONS** - This only ADDS the new metadata field
+    - **PRESERVES ALL DATA** - Existing fields are not modified
+    - **INTEGER VALUE** - clearance_level is stored as `1` (not "1")
+    - Filter by namespace using the `pinecone_namespace` field
+    """)
+
+    # Connection test
+    st.subheader("🔗 Connection Status")
+    col1, col2 = st.columns(2)
+
+    with col1:
+        with st.spinner("Testing connection..."):
+            connected = elasticsearch_client.test_connection()
+
+        if connected:
+            st.success("✅ Connected to Elasticsearch")
+        else:
+            st.error("❌ Connection failed")
+            return
+
+    with col2:
+        stats = elasticsearch_client.get_index_stats()
+        st.metric("Index", config.elasticsearch.index_name)
+        st.metric("Total Documents", f"{stats.get('doc_count', 0):,}")
+
+    # Overall stats
+    st.markdown("---")
+    st.subheader("📊 Overall Statistics")
+
+    with st.spinner("Fetching statistics..."):
+        all_stats = elasticsearch_client.get_all_stats()
+
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Total Documents", f"{all_stats.total_count:,}")
+    col2.metric("With clearance_level", f"{all_stats.with_clearance_level:,}")
+    col3.metric("Without clearance_level", f"{all_stats.without_clearance_level:,}")
+
+    if all_stats.without_clearance_level == 0 and all_stats.total_count > 0:
+        st.success("🎉 All documents already have clearance_level!")
+
+    # Namespace selection
+    st.markdown("---")
+    st.subheader("🏷️ Update by Namespace")
+
+    # Get available namespaces
+    with st.spinner("Fetching namespaces..."):
+        namespaces = elasticsearch_client.list_all_namespaces()
+
+    if not namespaces:
+        st.warning("No namespaces found in the index.")
+        return
+
+    namespace_options = ["All Namespaces"] + namespaces
+    selected_namespace = st.selectbox(
+        "Select Namespace",
+        namespace_options,
+        help="Select a namespace to update, or 'All Namespaces' to update everything"
+    )
+
+    namespace_filter = None if selected_namespace == "All Namespaces" else selected_namespace
+
+    # Show namespace stats
+    if namespace_filter:
+        with st.spinner("Fetching namespace statistics..."):
+            ns_stats = elasticsearch_client.get_namespace_stats(namespace_filter)
+
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Documents in Namespace", f"{ns_stats.total_count:,}")
+        col2.metric("With clearance_level", f"{ns_stats.with_clearance_level:,}")
+        col3.metric("Without clearance_level", f"{ns_stats.without_clearance_level:,}")
+
+    # Update options
+    st.markdown("---")
+    st.subheader("⚙️ Update Options")
+
+    only_missing = st.checkbox(
+        "Only update documents without clearance_level",
+        value=True,
+        help="If checked, documents that already have clearance_level will be skipped"
+    )
+
+    # Preview
+    st.markdown("---")
+    st.subheader("👁️ Preview")
+
+    if st.button("🔍 Preview Update"):
+        with st.spinner("Counting documents to update..."):
+            preview_count = elasticsearch_client.preview_update(namespace_filter, only_missing)
+
+        st.info(f"**{preview_count:,}** documents would be updated")
+
+        if preview_count > 0:
+            st.markdown("**Sample documents:**")
+            samples = elasticsearch_client.sample_documents(namespace_filter, 5)
+            for i, doc in enumerate(samples, 1):
+                with st.expander(f"Document {i}: {doc.get('filename', 'Unknown')}"):
+                    st.json(doc)
+
+    # Execute update
+    st.markdown("---")
+    st.subheader("▶️ Execute Update")
+
+    st.warning(f"""
+    **Ready to update:**
+    - Namespace: `{selected_namespace}`
+    - Only missing: `{only_missing}`
+    - New field: `clearance_level: {config.migration.new_metadata_value}` (integer)
+    """)
+
+    if st.button("🚀 Start Elasticsearch Update", type="primary"):
+        run_elasticsearch_update(namespace_filter, only_missing)
+
+
+def run_elasticsearch_update(namespace: str, only_missing: bool):
+    """Execute the Elasticsearch bulk update"""
+
+    # Status containers
+    status_container = st.empty()
+    progress_container = st.empty()
+    stats_container = st.empty()
+
+    status_container.info("Starting bulk update...")
+
+    # Get initial count
+    preview_count = elasticsearch_client.preview_update(namespace, only_missing)
+
+    if preview_count == 0:
+        status_container.success("🎉 No documents need updating!")
+        return
+
+    progress_bar = progress_container.progress(0)
+
+    success_count = 0
+    failed_count = 0
+
+    def progress_callback(success, failed, total):
+        nonlocal success_count, failed_count
+        success_count = success
+        failed_count = failed
+
+        # Update progress
+        if preview_count > 0:
+            progress = min(total / preview_count, 1.0)
+            progress_bar.progress(progress)
+
+        stats_container.markdown(f"""
+        **Progress:** {total:,} processed |
+        **Success:** {success:,} |
+        **Failed:** {failed}
+        """)
+
+    try:
+        result = elasticsearch_client.bulk_add_clearance_level(
+            namespace=namespace,
+            only_missing=only_missing,
+            progress_callback=progress_callback
+        )
+
+        progress_bar.progress(1.0)
+
+        if result.get("error"):
+            status_container.error(f"❌ Update completed with errors: {result['error']}")
+        else:
+            status_container.success(f"🎉 Update Complete! Updated {result['success']:,} documents")
+
+        # Final stats
+        st.markdown("---")
+        st.subheader("📊 Update Results")
+
+        col1, col2 = st.columns(2)
+        col1.metric("Successfully Updated", f"{result['success']:,}")
+        col2.metric("Failed", f"{result['failed']}")
+
+        # Verify update
+        st.markdown("---")
+        st.subheader("✅ Verification")
+
+        with st.spinner("Verifying update..."):
+            if namespace:
+                new_stats = elasticsearch_client.get_namespace_stats(namespace)
+            else:
+                new_stats = elasticsearch_client.get_all_stats()
+
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Total Documents", f"{new_stats.total_count:,}")
+        col2.metric("With clearance_level", f"{new_stats.with_clearance_level:,}")
+        col3.metric("Without clearance_level", f"{new_stats.without_clearance_level:,}")
+
+    except Exception as e:
+        status_container.error(f"❌ Update failed: {e}")
+        st.exception(e)
+
+
 def render_configuration():
     """Render the configuration page"""
     st.title("⚙️ Configuration")
@@ -451,6 +653,18 @@ def render_configuration():
         st.code(str(config.gemini.output_dimensions))
 
     st.markdown(f"**Task Type:** `{config.gemini.task_type}`")
+
+    # Elasticsearch Configuration
+    st.markdown("---")
+    st.subheader("🔎 Elasticsearch Configuration")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown("**Endpoint**")
+        st.code(config.elasticsearch.endpoint[:50] + "..." if len(config.elasticsearch.endpoint) > 50 else config.elasticsearch.endpoint)
+    with col2:
+        st.markdown("**Index**")
+        st.code(config.elasticsearch.index_name)
 
     # Migration Configuration
     st.markdown("---")
@@ -497,6 +711,8 @@ def main():
         render_check_namespace()
     elif page == "🚀 Run Migration":
         render_migration()
+    elif page == "🔎 Elasticsearch Update":
+        render_elasticsearch_update()
     elif page == "⚙️ Configuration":
         render_configuration()
 
