@@ -7,12 +7,10 @@ A Python application with **Web GUI** for migrating vector embeddings from an ol
 - **Web-Based GUI**: Beautiful browser interface powered by Streamlit
 - **Dashboard**: Overview of migration status and statistics
 - **Check Namespace Counts**: View embedding counts for any namespace
-- **Compare Indexes**: See the difference between source and target namespaces
 - **Idempotent Migration**: Automatically skips already-migrated vectors
 - **Batch Processing**: Efficiently handles thousands of vectors
 - **Metadata Preservation**: Keeps all original metadata intact
 - **New Metadata Addition**: Adds `clearance_level: 1` (integer) to all embeddings
-- **Fix Metadata Tool**: Update existing vectors from string to integer format
 - **Progress Tracking**: Real-time progress bar during migration
 - **Dry Run Mode**: Preview migration without making changes
 
@@ -103,22 +101,11 @@ python3 main.py
 - Enter any namespace ID
 - View vector counts in source, target, or both indexes
 
-### ⚖️ Compare Indexes
-- Side-by-side comparison of source and target
-- Migration status summary
-
 ### 🚀 Run Migration
 - Configure batch size
 - Enable/disable dry run mode
 - Real-time progress tracking
 - Detailed migration log
-
-### 🔧 Fix Metadata
-- **Purpose**: Update `clearance_level` from string `"1"` to integer `1`
-- Scan vectors with string format clearance_level
-- Update metadata without re-embedding
-- Concurrent processing for efficiency
-- Works on both source and target indexes
 
 ### ⚙️ Configuration
 - View all current settings

@@ -48,7 +48,7 @@ def render_sidebar():
         # Navigation
         page = st.radio(
             "Navigation",
-            ["📊 Dashboard", "🔍 Check Namespace", "⚖️ Compare Indexes", "🚀 Run Migration", "🔧 Fix Metadata", "⚙️ Configuration"],
+            ["📊 Dashboard", "🔍 Check Namespace", "🚀 Run Migration", "⚙️ Configuration"],
             label_visibility="collapsed"
         )
 
@@ -185,68 +185,6 @@ def render_check_namespace():
                     st.success("✅ Namespace exists")
                 else:
                     st.info("ℹ️ Namespace will be created on migration")
-
-
-def render_compare_indexes():
-    """Render the index comparison page"""
-    st.title("⚖️ Compare Indexes")
-    st.markdown("Compare namespace contents between source and target indexes.")
-
-    namespace = st.text_input(
-        "Namespace ID",
-        value=config.migration.default_namespace,
-        help="Enter the namespace UUID to compare"
-    )
-
-    if st.button("⚖️ Compare", type="primary"):
-        if not namespace:
-            st.error("Please enter a namespace ID")
-            return
-
-        with st.spinner("Fetching comparison data..."):
-            source_stats = pinecone_client.get_namespace_stats(
-                config.pinecone.old_index_name, namespace
-            )
-            target_stats = pinecone_client.get_namespace_stats(
-                config.pinecone.new_index_name, namespace
-            )
-
-        # Comparison table
-        st.subheader("📊 Comparison Results")
-
-        comparison_data = {
-            "Property": ["Index Name", "Vector Count", "Namespace Exists"],
-            "Source": [
-                config.pinecone.old_index_name,
-                f"{source_stats.get('vector_count', 0):,}",
-                "✅ Yes" if source_stats.get("exists") else "❌ No"
-            ],
-            "Target": [
-                config.pinecone.new_index_name,
-                f"{target_stats.get('vector_count', 0):,}",
-                "✅ Yes" if target_stats.get("exists") else "❌ No"
-            ]
-        }
-
-        st.table(comparison_data)
-
-        # Migration status
-        source_count = source_stats.get('vector_count', 0)
-        target_count = target_stats.get('vector_count', 0)
-        remaining = source_count - target_count
-
-        st.markdown("---")
-        st.subheader("📈 Migration Status")
-
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Total in Source", f"{source_count:,}")
-        col2.metric("Migrated to Target", f"{target_count:,}")
-        col3.metric("Remaining", f"{remaining:,}")
-
-        if remaining > 0:
-            st.warning(f"⚠️ {remaining:,} vectors need to be migrated")
-        elif source_count > 0:
-            st.success("🎉 All vectors have been migrated!")
 
 
 def render_migration():
@@ -545,191 +483,6 @@ def render_configuration():
     st.code(config.migration.default_namespace)
 
 
-def render_fix_metadata():
-    """Render the Fix Metadata page for updating clearance_level from string to number"""
-    st.title("🔧 Fix Metadata")
-    st.markdown("""
-    **Purpose:** Update the `clearance_level` metadata field from string `"1"` to number `1`.
-
-    This operation:
-    - ✅ Only updates metadata (no re-embedding)
-    - ✅ Preserves all other metadata fields
-    - ✅ Uses Pinecone's bulk update API for maximum efficiency
-    - ✅ Single API call updates all matching vectors
-    """)
-
-    st.markdown("---")
-
-    # Configuration
-    col1, col2 = st.columns(2)
-
-    with col1:
-        namespace = st.text_input(
-            "Namespace",
-            value=config.migration.default_namespace,
-            help="The namespace containing vectors to fix"
-        )
-
-        st.markdown(f"**Target Index:** `{config.pinecone.new_index_name}`")
-
-    with col2:
-        st.info("""
-        **Bulk Update API:**
-        Uses Pinecone's optimized bulk update API that:
-        - Filters vectors by metadata
-        - Updates all matching vectors in a single API call
-        - Only updates the **target** index (askdona)
-        """)
-
-    st.markdown("---")
-
-    # Action buttons
-    col_btn1, col_btn2, col_btn3 = st.columns(3)
-
-    with col_btn1:
-        scan_button = st.button("🔍 Scan (Preview)", type="secondary", use_container_width=True)
-
-    with col_btn2:
-        dry_run_button = st.button("🧪 Dry Run", type="secondary", use_container_width=True)
-
-    with col_btn3:
-        bulk_fix_button = st.button("🚀 Bulk Fix (Optimized)", type="primary", use_container_width=True)
-
-    # Always update target index only (source is read-only)
-    is_source = False
-    index_name = config.pinecone.new_index_name
-
-    # Scan operation (preview only)
-    if scan_button:
-        if not namespace:
-            st.error("Please enter a namespace")
-            return
-
-        with st.spinner(f"Scanning {index_name} namespace: {namespace}..."):
-            try:
-                # Get vectors with string clearance_level
-                vectors_to_fix = pinecone_client.get_vectors_with_string_clearance(
-                    namespace=namespace,
-                    source=is_source,
-                    max_workers=5
-                )
-
-                if vectors_to_fix:
-                    st.success(f"Found **{len(vectors_to_fix)}** vectors with string clearance_level that need fixing.")
-
-                    # Show sample IDs
-                    with st.expander("Sample Vector IDs (first 10)"):
-                        for vec_id in vectors_to_fix[:10]:
-                            st.code(vec_id)
-                else:
-                    st.info("No vectors found with string clearance_level. All vectors are already using number format.")
-
-            except Exception as e:
-                st.error(f"Error scanning: {e}")
-
-    # Dry run operation
-    if dry_run_button:
-        if not namespace:
-            st.error("Please enter a namespace")
-            return
-
-        st.markdown("---")
-        st.subheader("🧪 Dry Run Results")
-
-        with st.spinner(f"Running dry run on {index_name}..."):
-            try:
-                result = pinecone_client.bulk_update_metadata_by_filter(
-                    namespace=namespace,
-                    metadata_filter={"clearance_level": {"$eq": "1"}},
-                    metadata_updates={"clearance_level": 1},
-                    source=is_source,
-                    dry_run=True
-                )
-
-                if result["success"]:
-                    st.success(f"Dry run complete! **{result['updated_count']}** vectors would be updated.")
-                    with st.expander("API Response"):
-                        st.json(result["response"])
-                else:
-                    st.error(f"Dry run failed: {result.get('error', 'Unknown error')}")
-
-            except Exception as e:
-                st.error(f"Error in dry run: {e}")
-
-    # Bulk fix operation (optimized)
-    if bulk_fix_button:
-        if not namespace:
-            st.error("Please enter a namespace")
-            return
-
-        st.markdown("---")
-        st.subheader("🚀 Bulk Update Progress")
-
-        status_text = st.empty()
-        log_container = st.container()
-
-        with log_container:
-            st.markdown("### Update Log")
-            log_expander = st.expander("Detailed Log", expanded=True)
-
-        try:
-            with log_expander:
-                st.write(f"Starting bulk metadata update...")
-                st.write(f"Index: {index_name}")
-                st.write(f"Namespace: {namespace}")
-                st.write(f"Filter: clearance_level == \"1\" (string)")
-                st.write(f"Update: clearance_level = 1 (integer)")
-                st.write("---")
-                st.write("Using Pinecone Bulk Update API (single API call)...")
-
-            status_text.text("Executing bulk update...")
-
-            # Perform the bulk update using filter
-            result = pinecone_client.bulk_update_metadata_by_filter(
-                namespace=namespace,
-                metadata_filter={"clearance_level": {"$eq": "1"}},
-                metadata_updates={"clearance_level": 1},
-                source=is_source,
-                dry_run=False
-            )
-
-            status_text.text("Complete!")
-
-            with log_expander:
-                st.write("---")
-                if result["success"]:
-                    st.write(f"✅ Successfully updated: {result['updated_count']} vectors")
-                else:
-                    st.write(f"❌ Update failed: {result.get('error', 'Unknown error')}")
-
-            # Show results
-            st.markdown("---")
-            st.subheader("✅ Bulk Fix Complete" if result["success"] else "❌ Bulk Fix Failed")
-
-            if result["success"]:
-                col_res1, col_res2 = st.columns(2)
-                with col_res1:
-                    st.metric("Vectors Updated", result["updated_count"])
-                with col_res2:
-                    st.metric("API Calls", "1 (bulk)")
-
-                if result["updated_count"] > 0:
-                    st.success(f"🎉 Successfully updated {result['updated_count']} vectors in a single API call!")
-                    st.balloons()
-                else:
-                    st.info("No vectors matched the filter. All vectors may already have integer clearance_level.")
-
-                with st.expander("API Response Details"):
-                    st.json(result.get("response", {}))
-            else:
-                st.error(f"Update failed: {result.get('error', 'Unknown error')}")
-                if result.get("status_code"):
-                    st.write(f"HTTP Status Code: {result['status_code']}")
-
-        except Exception as e:
-            st.error(f"Error during bulk fix: {e}")
-
-
 def main():
     """Main application entry point"""
     init_session_state()
@@ -742,12 +495,8 @@ def main():
         render_dashboard()
     elif page == "🔍 Check Namespace":
         render_check_namespace()
-    elif page == "⚖️ Compare Indexes":
-        render_compare_indexes()
     elif page == "🚀 Run Migration":
         render_migration()
-    elif page == "🔧 Fix Metadata":
-        render_fix_metadata()
     elif page == "⚙️ Configuration":
         render_configuration()
 
