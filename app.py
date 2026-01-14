@@ -570,11 +570,7 @@ def render_fix_metadata():
             help="The namespace containing vectors to fix"
         )
 
-        index_choice = st.radio(
-            "Index to Fix",
-            ["Target (askdona)", "Source (gflops-serverless)"],
-            help="Which index to update"
-        )
+        st.markdown(f"**Target Index:** `{config.pinecone.new_index_name}`")
 
     with col2:
         st.info("""
@@ -582,7 +578,7 @@ def render_fix_metadata():
         Uses Pinecone's optimized bulk update API that:
         - Filters vectors by metadata
         - Updates all matching vectors in a single API call
-        - Much faster than per-vector updates
+        - Only updates the **target** index (askdona)
         """)
 
     st.markdown("---")
@@ -599,8 +595,9 @@ def render_fix_metadata():
     with col_btn3:
         bulk_fix_button = st.button("🚀 Bulk Fix (Optimized)", type="primary", use_container_width=True)
 
-    is_source = index_choice == "Source (gflops-serverless)"
-    index_name = config.pinecone.old_index_name if is_source else config.pinecone.new_index_name
+    # Always update target index only (source is read-only)
+    is_source = False
+    index_name = config.pinecone.new_index_name
 
     # Scan operation (preview only)
     if scan_button:
