@@ -279,8 +279,8 @@ def render_migration():
             "Batch Size",
             min_value=10,
             max_value=100,
-            value=50,
-            help="Number of vectors to process at a time"
+            value=100,
+            help="Number of vectors to process at a time (optimized: 100)"
         )
 
     with col2:

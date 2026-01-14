@@ -162,7 +162,7 @@ All original metadata will be preserved.""",
         self,
         namespace: str,
         dry_run: bool = False,
-        batch_size: int = 50
+        batch_size: int = 100
     ) -> MigrationStats:
         """
         Migrate all vectors in a namespace from source to target.
